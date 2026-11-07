@@ -76,8 +76,9 @@
     cursor: pointer;
   }
   .music input { display: none; }
+  .music .yt { border: 2px solid var(--white); background: #c4302b; color: var(--white); font-weight: 700; font-size: .85rem; padding: 6px 12px; border-radius: 20px; text-decoration: none; }
   .song { font-size: .75rem; opacity: .9; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .wrap { position: relative; width: min(100%, calc(100dvh - 350px)); margin: 0 auto; }
+  .wrap { position: relative; width: min(100%, calc(100dvh - 400px)); margin: 0 auto; }
   canvas {
     display: block;
     width: 100%;
@@ -153,6 +154,7 @@
     <button id="musicBtn">🔊 Müzik: Açık</button>
     <label for="songFile">🎶 Şarkı seç</label>
     <input type="file" id="songFile" accept="audio/*">
+    <a class="yt" href="https://youtu.be/WP_7Yv6FFDs" target="_blank" rel="noopener">▶️ YouTube'da dinle</a>
     <span class="song" id="songName">Tribün marşı çalıyor</span>
   </div>
 
