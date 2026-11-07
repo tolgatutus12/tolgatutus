@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Amedspor Yılan</title>
+<style>
+  :root {
+    --red: #d7141a;
+    --green: #0b8a3e;
+    --dark-green: #075c2a;
+    --white: #ffffff;
+    --bg: #101814;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: linear-gradient(180deg, var(--red) 0 50%, var(--green) 50% 100%);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--white);
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    overflow: hidden;
+    touch-action: none;
+  }
+  .app {
+    width: min(100vw, 480px);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: stretch;
+  }
+  header {
+    background: var(--bg);
+    border: 3px solid var(--white);
+    border-radius: 14px;
+    padding: 8px 12px;
+    text-align: center;
+  }
+  h1 {
+    margin: 0;
+    font-size: 1.5rem;
+    letter-spacing: 2px;
+  }
+  h1 .r { color: var(--red); }
+  h1 .g { color: #19c35f; }
+  .sub { font-size: .8rem; opacity: .8; margin-top: 2px; }
+  .board {
+    display: flex;
+    justify-content: space-between;
+    background: var(--bg);
+    border-radius: 12px;
+    padding: 8px 14px;
+    font-weight: 700;
+    font-size: 1.05rem;
+  }
+  .board .home { color: #ff5a5f; }
+  .board .best { color: #3fe07f; }
+  .wrap { position: relative; width: min(100%, calc(100dvh - 290px)); margin: 0 auto; }
+  canvas {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border: 4px solid var(--white);
+    border-radius: 10px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.4);
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    background: rgba(10, 20, 14, .82);
+    border-radius: 10px;
+    text-align: center;
+    padding: 20px;
+  }
+  .overlay.hidden { display: none; }
+  .overlay h2 { margin: 0; font-size: 1.8rem; }
+  .overlay p { margin: 0; opacity: .9; }
+  .btn {
+    border: 3px solid var(--white);
+    background: linear-gradient(90deg, var(--red) 50%, var(--green) 50%);
+    color: var(--white);
+    font-weight: 800;
+    font-size: 1.1rem;
+    padding: 10px 26px;
+    border-radius: 30px;
+    cursor: pointer;
+    text-shadow: 0 1px 2px rgba(0,0,0,.6);
+  }
+  .pad {
+    display: grid;
+    grid-template-columns: repeat(3, 64px);
+    grid-template-rows: repeat(2, 50px);
+    gap: 8px;
+    justify-content: center;
+  }
+  .pad button {
+    border: 3px solid var(--white);
+    border-radius: 12px;
+    background: var(--bg);
+    color: var(--white);
+    font-size: 1.5rem;
+    cursor: pointer;
+  }
+  .pad button:active { background: var(--red); }
+  .pad .up { grid-column: 2; grid-row: 1; }
+  .pad .left { grid-column: 1; grid-row: 2; }
+  .pad .down { grid-column: 2; grid-row: 2; }
+  .pad .right { grid-column: 3; grid-row: 2; }
+  .hint { text-align: center; font-size: .75rem; opacity: .85; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1><span class="r">AMED</span><span class="g">SPOR</span> YILAN</h1>
+    <div class="sub">Topları topla, golleri say! 🔴🟢</div>
+  </header>
+
+  <div class="board">
+    <span class="home">Gol: <span id="score">0</span></span>
+    <span id="level">Hız: 1</span>
+    <span class="best">Rekor: <span id="best">0</span></span>
+  </div>
+
+  <div class="wrap">
+    <canvas id="game" width="400" height="400"></canvas>
+    <div class="overlay" id="overlay">
+      <h2 id="ovTitle">⚽ Maç Başlıyor!</h2>
+      <p id="ovText">Yılanı yönlendir, topları topla.<br>Duvara veya kendine çarpma!</p>
+      <button class="btn" id="startBtn">BAŞLA</button>
+    </div>
+  </div>
+
+  <div class="pad">
+    <button class="up" data-dir="up" aria-label="Yukarı">▲</button>
+    <button class="left" data-dir="left" aria-label="Sol">◀</button>
+    <button class="down" data-dir="down" aria-label="Aşağı">▼</button>
+    <button class="right" data-dir="right" aria-label="Sağ">▶</button>
+  </div>
+  <div class="hint">Telefonda: kaydır veya tuşlara bas · Bilgisayarda: ok tuşları / WASD · Boşluk: duraklat</div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const GRID = 20;
+  const CELL = canvas.width / GRID;
+
+  const scoreEl = document.getElementById('score');
+  const bestEl = document.getElementById('best');
+  const levelEl = document.getElementById('level');
+  const overlay = document.getElementById('overlay');
+  const ovTitle = document.getElementById('ovTitle');
+  const ovText = document.getElementById('ovText');
+  const startBtn = document.getElementById('startBtn');
+
+  const DIRS = {
+    up: { x: 0, y: -1 },
+    down: { x: 0, y: 1 },
+    left: { x: -1, y: 0 },
+    right: { x: 1, y: 0 },
+  };
+
+  const CHANTS = ['GOOOL!', 'Amed!', 'Harika!', 'Bir daha!', 'Süper!'];
+
+  let snake, dir, queue, ball, score, best, timer, running, paused, popups;
+
+  best = Number(localStorage.getItem('amedspor-yilan-best') || 0);
+  bestEl.textContent = best;
+
+  function reset() {
+    snake = [{ x: 9, y: 10 }, { x: 8, y: 10 }, { x: 7, y: 10 }];
+    dir = DIRS.right;
+    queue = [];
+    score = 0;
+    popups = [];
+    scoreEl.textContent = 0;
+    placeBall();
+    updateLevel();
+  }
+
+  function placeBall() {
+    const free = [];
+    for (let x = 0; x < GRID; x++) {
+      for (let y = 0; y < GRID; y++) {
+        if (!snake.some(s => s.x === x && s.y === y)) free.push({ x, y });
+      }
+    }
+    ball = free[Math.floor(Math.random() * free.length)];
+  }
+
+  function speed() {
+    return Math.max(60, 150 - Math.floor(score / 5) * 10);
+  }
+
+  function updateLevel() {
+    levelEl.textContent = 'Hız: ' + (1 + Math.floor(score / 5));
+  }
+
+  function setDir(name) {
+    if (!running || paused) return;
+    const next = DIRS[name];
+    const last = queue.length ? queue[queue.length - 1] : dir;
+    if (next.x === -last.x && next.y === -last.y) return;
+    if (next === last) return;
+    if (queue.length < 3) queue.push(next);
+  }
+
+  function step() {
+    if (queue.length) dir = queue.shift();
+    const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+
+    const hitWall = head.x < 0 || head.y < 0 || head.x >= GRID || head.y >= GRID;
+    const willEat = head.x === ball.x && head.y === ball.y;
+    const body = willEat ? snake : snake.slice(0, -1);
+    const hitSelf = body.some(s => s.x === head.x && s.y === head.y);
+
+    if (hitWall || hitSelf) return gameOver();
+
+    snake.unshift(head);
+    if (willEat) {
+      score++;
+      scoreEl.textContent = score;
+      popups.push({ x: head.x, y: head.y, text: CHANTS[Math.floor(Math.random() * CHANTS.length)], t: 0 });
+      updateLevel();
+      if (snake.length === GRID * GRID) return gameOver(true);
+      placeBall();
+      restartTimer();
+    } else {
+      snake.pop();
+    }
+    draw();
+  }
+
+  function restartTimer() {
+    clearInterval(timer);
+    timer = setInterval(step, speed());
+  }
+
+  function start() {
+    reset();
+    running = true;
+    paused = false;
+    overlay.classList.add('hidden');
+    draw();
+    restartTimer();
+  }
+
+  function togglePause() {
+    if (!running) return;
+    paused = !paused;
+    if (paused) {
+      clearInterval(timer);
+      ovTitle.textContent = '⏸ Devre Arası';
+      ovText.textContent = 'Devam etmek için dokun.';
+      startBtn.textContent = 'DEVAM';
+      overlay.classList.remove('hidden');
+    } else {
+      overlay.classList.add('hidden');
+      restartTimer();
+    }
+  }
+
+  function gameOver(won) {
+    clearInterval(timer);
+    running = false;
+    if (score > best) {
+      best = score;
+      localStorage.setItem('amedspor-yilan-best', best);
+      bestEl.textContent = best;
+    }
+    draw();
+    ovTitle.textContent = won ? '🏆 Şampiyon!' : '🟥 Maç Bitti!';
+    ovText.innerHTML = 'Attığın gol: <b>' + score + '</b><br>Rekor: <b>' + best + '</b>';
+    startBtn.textContent = 'RÖVANŞ';
+    overlay.classList.remove('hidden');
+  }
+
+  // ---------- Çizim ----------
+  function drawPitch() {
+    for (let i = 0; i < GRID; i += 2) {
+      ctx.fillStyle = (i / 2) % 2 ? '#1e9a4c' : '#23a854';
+      ctx.fillRect(0, i * CELL, canvas.width, CELL * 2);
+    }
+    ctx.strokeStyle = 'rgba(255,255,255,.55)';
+    ctx.lineWidth = 2;
+    const w = canvas.width, h = canvas.height;
+    ctx.strokeRect(4, 4, w - 8, h - 8);
+    ctx.beginPath();
+    ctx.moveTo(4, h / 2); ctx.lineTo(w - 4, h / 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, CELL * 3, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeRect(w / 2 - CELL * 4, 4, CELL * 8, CELL * 3);
+    ctx.strokeRect(w / 2 - CELL * 4, h - 4 - CELL * 3, CELL * 8, CELL * 3);
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function drawSnake() {
+    snake.forEach((s, i) => {
+      const x = s.x * CELL, y = s.y * CELL;
+      // Kırmızı-yeşil forma çizgileri
+      ctx.fillStyle = i % 2 === 0 ? '#d7141a' : '#0b8a3e';
+      roundRect(x + 1, y + 1, CELL - 2, CELL - 2, 5);
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    });
+
+    // Kafa: gözler
+    const h = snake[0];
+    const cx = h.x * CELL + CELL / 2, cy = h.y * CELL + CELL / 2;
+    const px = -dir.y, py = dir.x; // dik vektör
+    [-1, 1].forEach(side => {
+      const ex = cx + dir.x * 4 + px * side * 4;
+      const ey = cy + dir.y * 4 + py * side * 4;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(ex, ey, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#000';
+      ctx.beginPath(); ctx.arc(ex + dir.x, ey + dir.y, 1.5, 0, Math.PI * 2); ctx.fill();
+    });
+  }
+
+  function drawBall() {
+    const cx = ball.x * CELL + CELL / 2, cy = ball.y * CELL + CELL / 2, r = CELL / 2 - 2;
+    ctx.fillStyle = 'rgba(0,0,0,.25)';
+    ctx.beginPath(); ctx.ellipse(cx + 2, cy + r - 1, r * .8, r * .3, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#222'; ctx.lineWidth = 1; ctx.stroke();
+    // Ortadaki beşgen
+    ctx.fillStyle = '#222';
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const a = -Math.PI / 2 + i * 2 * Math.PI / 5;
+      const px = cx + Math.cos(a) * r * .38, py = cy + Math.sin(a) * r * .38;
+      i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+    }
+    ctx.closePath(); ctx.fill();
+    // Dış lekeler
+    for (let i = 0; i < 5; i++) {
+      const a = -Math.PI / 2 + i * 2 * Math.PI / 5;
+      ctx.beginPath();
+      ctx.arc(cx + Math.cos(a) * r * .85, cy + Math.sin(a) * r * .85, r * .2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawPopups() {
+    popups = popups.filter(p => p.t < 8);
+    popups.forEach(p => {
+      p.t++;
+      ctx.globalAlpha = 1 - p.t / 8;
+      ctx.font = 'bold 18px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = '#0b8a3e';
+      const tx = Math.min(Math.max(p.x * CELL + CELL / 2, 40), canvas.width - 40);
+      const ty = Math.max(p.y * CELL - p.t * 3, 20);
+      ctx.strokeText(p.text, tx, ty);
+      ctx.fillStyle = '#ffeb3b';
+      ctx.fillText(p.text, tx, ty);
+      ctx.globalAlpha = 1;
+    });
+  }
+
+  function draw() {
+    drawPitch();
+    drawBall();
+    drawSnake();
+    drawPopups();
+  }
+
+  // ---------- Kontroller ----------
+  const KEYS = {
+    ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
+    w: 'up', s: 'down', a: 'left', d: 'right',
+    W: 'up', S: 'down', A: 'left', D: 'right',
+  };
+
+  document.addEventListener('keydown', e => {
+    if (KEYS[e.key]) { e.preventDefault(); setDir(KEYS[e.key]); }
+    else if (e.key === ' ' || e.key === 'p' || e.key === 'P') {
+      e.preventDefault();
+      if (!running) start(); else togglePause();
+    } else if (e.key === 'Enter' && !running) start();
+  });
+
+  document.querySelectorAll('.pad button').forEach(b => {
+    b.addEventListener('pointerdown', e => { e.preventDefault(); setDir(b.dataset.dir); });
+  });
+
+  let touchStart = null;
+  document.addEventListener('touchstart', e => {
+    const t = e.touches[0];
+    touchStart = { x: t.clientX, y: t.clientY };
+  }, { passive: true });
+  document.addEventListener('touchmove', e => {
+    if (!touchStart) return;
+    const t = e.touches[0];
+    const dx = t.clientX - touchStart.x, dy = t.clientY - touchStart.y;
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < 25) return;
+    setDir(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'));
+    touchStart = { x: t.clientX, y: t.clientY };
+  }, { passive: true });
+  document.addEventListener('touchend', () => { touchStart = null; });
+
+  startBtn.addEventListener('click', () => {
+    if (running && paused) togglePause(); else start();
+  });
+
+  // Sekme gizlenince otomatik duraklat
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && running && !paused) togglePause();
+  });
+
+  reset();
+  draw();
+})();
+</script>
+</body>
+</html>
