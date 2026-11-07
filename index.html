@@ -58,7 +58,26 @@
   }
   .board .home { color: #ff5a5f; }
   .board .best { color: #3fe07f; }
-  .wrap { position: relative; width: min(100%, calc(100dvh - 290px)); margin: 0 auto; }
+  .music {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .music button, .music label {
+    border: 2px solid var(--white);
+    background: var(--bg);
+    color: var(--white);
+    font-weight: 700;
+    font-size: .85rem;
+    padding: 6px 12px;
+    border-radius: 20px;
+    cursor: pointer;
+  }
+  .music input { display: none; }
+  .song { font-size: .75rem; opacity: .9; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wrap { position: relative; width: min(100%, calc(100dvh - 350px)); margin: 0 auto; }
   canvas {
     display: block;
     width: 100%;
@@ -130,7 +149,15 @@
     <span class="best">Rekor: <span id="best">0</span></span>
   </div>
 
+  <div class="music">
+    <button id="musicBtn">🔊 Müzik: Açık</button>
+    <label for="songFile">🎶 Şarkı seç</label>
+    <input type="file" id="songFile" accept="audio/*">
+    <span class="song" id="songName">Tribün marşı çalıyor</span>
+  </div>
+
   <div class="wrap">
+    <audio id="songAudio" loop></audio>
     <canvas id="game" width="400" height="400"></canvas>
     <div class="overlay" id="overlay">
       <h2 id="ovTitle">⚽ Maç Başlıyor!</h2>
@@ -232,6 +259,7 @@
       scoreEl.textContent = score;
       popups.push({ x: head.x, y: head.y, text: CHANTS[Math.floor(Math.random() * CHANTS.length)], t: 0 });
       updateLevel();
+      goalSound();
       if (snake.length === GRID * GRID) return gameOver(true);
       placeBall();
       restartTimer();
@@ -253,6 +281,9 @@
     overlay.classList.add('hidden');
     draw();
     restartTimer();
+    musicStop();
+    if (customSong) songAudio.currentTime = 0;
+    musicPlay();
   }
 
   function togglePause() {
@@ -260,6 +291,7 @@
     paused = !paused;
     if (paused) {
       clearInterval(timer);
+      musicStop();
       ovTitle.textContent = '⏸ Devre Arası';
       ovText.textContent = 'Devam etmek için dokun.';
       startBtn.textContent = 'DEVAM';
@@ -267,12 +299,15 @@
     } else {
       overlay.classList.add('hidden');
       restartTimer();
+      musicPlay();
     }
   }
 
   function gameOver(won) {
     clearInterval(timer);
     running = false;
+    musicStop();
+    whistle();
     if (score > best) {
       best = score;
       try { localStorage.setItem('amedspor-yilan-best', best); } catch (e) {}
@@ -390,6 +425,122 @@
     drawSnake();
     drawPopups();
   }
+
+
+  // ---------- Müzik ----------
+  const musicBtn = document.getElementById('musicBtn');
+  const songFile = document.getElementById('songFile');
+  const songName = document.getElementById('songName');
+  const songAudio = document.getElementById('songAudio');
+  let musicOn = true, actx = null, beatTimer = null, beatStep = 0, nextTime = 0, customSong = false;
+
+  // Özgün tribün havası (A minör pentatonik)
+  const MELODY = [57, 0, 60, 62, 64, 0, 64, 62, 60, 0, 62, 64, 57, 0, 0, 0,
+                  64, 0, 67, 69, 67, 0, 64, 62, 60, 0, 62, 60, 57, 0, 0, 0];
+  const BPM = 132, STEP = 60 / BPM / 2;
+
+  function ensureCtx() {
+    if (!actx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      actx = new AC();
+    }
+    if (actx.state === 'suspended') actx.resume().catch(() => {});
+    return actx;
+  }
+
+  function tone(freq, t, dur, type, vol) {
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g).connect(actx.destination);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+
+  function kick(t) {
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.frequency.setValueAtTime(140, t);
+    o.frequency.exponentialRampToValueAtTime(40, t + 0.15);
+    g.gain.setValueAtTime(0.5, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+    o.connect(g).connect(actx.destination);
+    o.start(t); o.stop(t + 0.22);
+  }
+
+  function clap(t) {
+    const len = actx.sampleRate * 0.08;
+    const buf = actx.createBuffer(1, len, actx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    const src = actx.createBufferSource(), g = actx.createGain(), f = actx.createBiquadFilter();
+    f.type = 'bandpass'; f.frequency.value = 1500;
+    g.gain.value = 0.25;
+    src.buffer = buf; src.connect(f).connect(g).connect(actx.destination);
+    src.start(t);
+  }
+
+  const midi = n => 440 * Math.pow(2, (n - 69) / 12);
+
+  function scheduleBeat() {
+    while (nextTime < actx.currentTime + 0.15) {
+      const i = beatStep % 32;
+      if (i % 4 === 0) kick(nextTime);
+      if (i % 8 === 4) clap(nextTime);
+      if (MELODY[i]) tone(midi(MELODY[i]), nextTime, STEP * 1.8, 'square', 0.06);
+      if (i % 8 === 0) tone(midi(MELODY[i] ? MELODY[i] - 24 : 45), nextTime, STEP * 3, 'triangle', 0.12);
+      nextTime += STEP;
+      beatStep++;
+    }
+  }
+
+  function musicPlay() {
+    if (!musicOn) return;
+    if (customSong) {
+      songAudio.play().catch(() => {});
+      return;
+    }
+    if (!ensureCtx() || beatTimer) return;
+    nextTime = actx.currentTime + 0.05;
+    beatTimer = setInterval(scheduleBeat, 40);
+  }
+
+  function musicStop() {
+    clearInterval(beatTimer); beatTimer = null;
+    songAudio.pause();
+  }
+
+  function goalSound() {
+    if (!musicOn || !ensureCtx()) return;
+    const t = actx.currentTime;
+    tone(midi(72), t, 0.12, 'square', 0.08);
+    tone(midi(76), t + 0.08, 0.12, 'square', 0.08);
+    tone(midi(79), t + 0.16, 0.25, 'square', 0.08);
+  }
+
+  function whistle() {
+    if (!musicOn || !ensureCtx()) return;
+    const t = actx.currentTime;
+    tone(2200, t, 0.25, 'sine', 0.12);
+    tone(2200, t + 0.32, 0.6, 'sine', 0.12);
+  }
+
+  musicBtn.addEventListener('click', () => {
+    musicOn = !musicOn;
+    musicBtn.textContent = musicOn ? '🔊 Müzik: Açık' : '🔇 Müzik: Kapalı';
+    if (musicOn && running && !paused) musicPlay(); else musicStop();
+  });
+
+  songFile.addEventListener('change', () => {
+    const f = songFile.files[0];
+    if (!f) return;
+    musicStop();
+    if (songAudio.src) URL.revokeObjectURL(songAudio.src);
+    songAudio.src = URL.createObjectURL(f);
+    customSong = true;
+    songName.textContent = '🎵 ' + f.name.replace(/\.[^.]+$/, '');
+    if (running && !paused) musicPlay();
+  });
 
   // ---------- Kontroller ----------
   const KEYS = {
