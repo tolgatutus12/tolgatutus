@@ -174,7 +174,7 @@
 
   let snake, dir, queue, ball, score, best, timer, running, paused, popups;
 
-  best = Number(localStorage.getItem('amedspor-yilan-best') || 0);
+  try { best = Number(localStorage.getItem('amedspor-yilan-best') || 0); } catch (e) { best = 0; }
   bestEl.textContent = best;
 
   function reset() {
@@ -275,7 +275,7 @@
     running = false;
     if (score > best) {
       best = score;
-      localStorage.setItem('amedspor-yilan-best', best);
+      try { localStorage.setItem('amedspor-yilan-best', best); } catch (e) {}
       bestEl.textContent = best;
     }
     draw();
